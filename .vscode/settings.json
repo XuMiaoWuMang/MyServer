@@ -1,0 +1,10 @@
+{
+    "makefile.configureOnOpen": true,
+    "makefile.launchConfigurations": [
+        {
+            "cwd": "/home/xumiao/MyServer",
+            "binaryPath": "/home/xumiao/MyServer/MyServer",
+            "binaryArgs": []
+        }
+    ]
+}

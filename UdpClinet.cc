@@ -1,0 +1,75 @@
+#include <iostream>
+#include <cerrno>
+#include <cstring>
+#include <string>
+#include <unistd.h>
+#include <sys/types.h>
+/* See NOTES */
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+
+#include "Log.hpp"
+#include "Comm.hpp"
+#include "InetAddr.hpp"
+
+using namespace LogModule;
+
+int main(int argc, char *argv[])
+{
+    CONSOLELOG();
+    if(argc != 3)
+    {
+        std::cerr << "Usage: " << argv[0] << " <ip> <port>" << std::endl;
+        return Usage_Err;
+    }
+
+    std::string ip = argv[1];
+    uint16_t port = std::stoi(argv[2]);
+
+    // 1. 创建socket
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0)
+    {
+        // LOG(LogLevel::Error) << "socket error: " << strerror(errno);
+        exit(Socket_Err);
+    }
+    // LOG(LogLevel::Debug) << "socket created: " << sockfd;
+
+    // 2. 绑定地址
+    struct sockaddr_in addr;
+    bzero(&addr, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
+
+    while(true)
+    {
+        std::string inbuffer;
+        std::cout << "Please Enter# ";
+        getline(std::cin, inbuffer);
+        if(inbuffer.empty())
+            continue;
+        ssize_t sendlen = sendto(sockfd, inbuffer.c_str(), inbuffer.size(), 0, (struct sockaddr *)&addr, sizeof(addr));
+        if (sendlen > 0)
+        {
+            char recvbuffer[1024];
+            InetAddr inetAddr(addr);
+            // LOG(LogLevel::Debug) << "Sent to " << inetAddr.ToString() << " - " << inbuffer;
+            ssize_t recvlen = recvfrom(sockfd, recvbuffer, sizeof(recvbuffer), 0, nullptr, nullptr);
+            if (recvlen < 0)            {
+                // LOG(LogLevel::Error) << "recvfrom error: " << strerror(errno);
+                exit(-1);
+            }else if (recvlen > 0)
+            {
+                recvbuffer[recvlen] = '\0';
+                std::cout << recvbuffer << std::endl;
+                // LOG(LogLevel::Debug) << "Received from " << inetAddr.ToString() << " - " << inbuffer;
+            }
+        }else exit(-1);
+
+
+    }
+    close(sockfd);
+
+}   
