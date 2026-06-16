@@ -9,169 +9,133 @@
 #include <pthread.h>
 #include "Log.hpp"
 
+/*
+重新编排项目架构。
+该文件旨在使用Thread封装pthread线程的各种调用方法，方便后续的使用和拓展。
+它不需要关注自己的具体任务是什么，只需要能够创建之后等待任务，然后执行即可。
+值得一提的是，等待任务并不需要固定好任务类型，参数也不需要固定，所以我觉得使用两个模板办法。
+第一个模板是执行函数的类型，第二个模板是执行函数所需的参数类型。
+调用者可以将需要返回的数据保存在第二个模板中。
+不，不对，不需要第一个模板，执行函数的类型模仿pthread_create就行,只接受任意一个类型的参数。
+也许需要先思考，Thread线程是否需要持久化。
+作为Thread线程的最小单位，不需要考虑持久化，职责越小越好，那么这个最小单位的作用就是，执行上层传递的函数。
+如果需要持久化，那么调用者需要先写好一个循环函数，作为构造函数的参数。
+*/
 using namespace LogModule;
-
 namespace MyThread
 {
-    const unsigned int DefaultCount = 5;            // 默认线程池只有5个线程
-    static unsigned int ThreadCount = DefaultCount; // 线程池线函数未就绪程数量
-    std::mutex _gMutex;                             // 互斥锁
-    std::condition_variable _gcond;                 // 条件变量
-    using func_t = std::function<void(void *)>;     // 任务函数
-
+    static int number = 1;
+    enum class TSTATUS
+    {
+        NEW,
+        RUNNING,
+        STOP
+    };
+    template <typename T = void*>
+    using func_t = std::function<void(T)>;
+    template <typename T = void*>
     class Thread
     {
-    private:
-        // 线程处理函数, 解决函数类型不同的问题
-        static void *headlerFunc(void *arg)
-        {
-            Thread *self = static_cast<Thread *>(arg);
-            while (true)
-            {
-                LOG(LogLevel::Debug) << self->_threadName << "等待中...";
-                sleep(1);
-                {
-                    std::unique_lock<std::mutex> lock(_gMutex); // 先上锁
-                    // 如果不符合条件，就释放并等待 ReadyCount
-                    _gcond.wait(lock, [&]
-                                { return self->_func != nullptr; });
-
-                    LOG(LogLevel::Debug) << self->_threadName << "已就绪";
-                }
-                self->_func(nullptr);
-                self->SetFunc(nullptr);
-                {
-                    std::lock_guard<std::mutex> lock(_gMutex);
-                    ThreadCount++;
-                }
-
-                // std::cout << self->_threadName << " is finish" << std::endl;
-            }
-            return nullptr;
-        }
-
     public:
-        // 初始化线程, 并设置运行状态为false, 函数就绪状态为false
-        Thread(std::string threadName, func_t func = nullptr)
-            : _threadName(threadName),
-              _func(func),
-              _running(false)
-        //   ,_ready(false)
+        Thread(func_t<T> func)
+            : _threadId(0), 
+              _status(TSTATUS::NEW), 
+              _joinable(false), // 默认不分离，子线程交由main线程管理
+              _func(func)
         {
-            LOG(LogLevel::Info) << _threadName << "已创建";
+            // 构造名称，number是静态变量，不必担心重名，只是不会回退number，导致线程名只会一直增大
+            _name = "Thread-" + std::to_string(number++); 
         }
-        // 启动线程，设置运行状态为true
+
         void Start()
         {
-            // 如果线程已运行, 则直接返回
-            if (isRunning())
+            if (_status == TSTATUS::RUNNING)
+            {
                 return;
-            pthread_create(&_threadId, nullptr, headlerFunc, this);
-            _running = true;
-            LOG(LogLevel::Info) << _threadName << "已运行";
-        }
-
-        // 设置线程函数, 并设置函数就绪状态为true
-        void SetFunc(func_t func)
-        {
-            // 如果函数就绪, 则直接返回
-            // if (isReady())
-            //     return;
-            std::lock_guard<std::mutex> lock(_mutex);
-
-            _func = func;
-        }
-        void Join()
-        {
-            // 如果线程未运行, 则直接返回
-            if (!isRunning())
-                return;
-            pthread_join(_threadId, nullptr);
-            _running = false;
-        }
-        ~Thread()
-        {
-        }
-        bool isRunning()
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            return _running;
-        }
-        // bool isReady()
-        // {
-        //     std::lock_guard<std::mutex> lock(_mutex);
-        //     return _ready;
-        // }
-        std::string getThreadName()
-        {
-            return _threadName;
-        }
-
-    private:
-        pthread_t _threadId;
-        std::string _threadName;
-        // bool _ready = false;
-        func_t _func = nullptr;
-        bool _running = false;
-        std::mutex _mutex;
-    };
-
-    class ThreadsManager
-    {
-    public:
-        ThreadsManager()
-        {
-        }
-
-        ThreadsManager(unsigned int Count)
-        {
-            std::lock_guard<std::mutex> lock(_gMutex);
-
-            for (unsigned int i = 0; i < Count; i++)
-            {
-                std::string threadName = "Thread-" + std::to_string(i);
-                _threads.emplace(threadName, threadName);
-                _threads.at(threadName).Start();
             }
+            int n = ::pthread_create(&_threadId, nullptr, Routine, this);
+            _status = TSTATUS::RUNNING;
         }
-        void DebugPrint()
-        {
-            for (auto &thread : _threads)
-            {
-                LOG(LogLevel::Debug) << thread.second.getThreadName();
-            }
-        }
-        bool Dispatcher(func_t func)
-        {
-            {
-                std::unique_lock<std::mutex> lock(_gMutex);
-                _gcond.wait(lock, [&]
-                            { return ThreadCount > 0; });
-                ThreadCount--;
-                LOG(LogLevel::Debug) << "Dispatcher: " << ThreadCount << " threads are ready";
-            }
-            for (auto &thread : _threads)
-            {
-                // 如果线程未运行, 则直接返回
-                if (!thread.second.isRunning())
-                    continue;
-                LOG(LogLevel::Debug) << "Dispatcher: " << thread.second.getThreadName() << " is ready";
-                thread.second.SetFunc(func);
-                _gcond.notify_all();
 
+        bool Stop()
+        {
+            if (_status == TSTATUS::RUNNING)
+            {
+                int n = ::pthread_cancel(_threadId);
+                if (n != 0)
+                {
+                    return false;
+                }
+
+                _status = TSTATUS::STOP;
                 return true;
             }
-
             return false;
         }
-        ~ThreadsManager()
+
+        bool Join()
         {
+            if (_joinable)
+            {
+                int n = ::pthread_join(_threadId, nullptr);
+                if (n != 0)
+                {
+                    return false;
+                }
+
+                _status = TSTATUS::STOP; // 设置 STOP 状态，防止又join又cancel
+                return true;
+            }
+            return false;
+        }
+
+        void Detach()
+        {
+            EnableDetach();
+            pthread_detach(_threadId);
+        }
+
+        bool IsJoinable() { return _joinable; } // 判断是否分离
+        std::string Name() { return _name; } // 获取线程名称
+
+        T &Data()
+        {
+            return _data; // 获取用户数据
+        }
+
+        void SetData(T &data)
+        {
+            _data = data; // 如果是自定义类型需要注意符号重载
         }
 
     private:
-        std::unordered_map<std::string, Thread> _threads;
+        static void *Routine(void *arg)
+        {
+            Thread<T> *t = static_cast<Thread<T> *>(arg);
+
+            t->_status = TSTATUS::RUNNING; // 线程状态设置为RUNNING
+            t->_func(t->Data()); // 执行真正的函数
+
+            return nullptr;
+        }
+        void EnableDetach()
+        {
+            _joinable = false;
+        }
+
+    private:
+        // 信息变量
+        pthread_t _threadId;
+        std::string _name;
+
+        TSTATUS _status; // 状态
+        bool _joinable;  // 默认不分离（detach）
         std::mutex _mutex;
+        std::condition_variable _cond;
+
+        func_t<T> _func;
+        T _data;
     };
-    static ThreadsManager HandleManager = ThreadsManager(DefaultCount);
+
 
 }

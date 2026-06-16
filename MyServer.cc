@@ -7,14 +7,19 @@
 using namespace LogModule;
 // using namespace MyThread;
 
+void Usage(int argc, char *argv[])
+{
+    if (argc != 2)
+    {
+        std::cerr << "Usage: " << argv[0] << " <port>" << std::endl;
+        exit(Usage_Err);
+    }
+}
 
 int main(int argc, char *argv[])
 {
-    if(argv[1] == nullptr){
-        std::cerr << "Usage: " << argv[0] << " <port>" << std::endl;
-        return Usage_Err;
-    }
     CONSOLELOG();
+    Usage(argc, argv);
     // struct sockaddr_in addr;
     // addr.sin_family = AF_INET;
     // addr.sin_port = htons(std::stoi(argv[1]));

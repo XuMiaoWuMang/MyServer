@@ -16,9 +16,15 @@
 #include "InetAddr.hpp"
 #include "Dict.hpp"
 #include "Udp_socket.hpp"
+#include "User.hpp"
+#include "Thread.hpp"
 
+using namespace MyThread;
 class UdpServer : public UdpSocket
 {
+public:
+    using UdpTask_t = std::function<void(int, const std::string &, InetAddr &)>;
+
 public:
     UdpServer(uint16_t port = defaultport)
         : UdpSocket(port)
@@ -57,7 +63,7 @@ public:
     void Start()
     {
         std::string buffer;
-        _Mydict = Dict();
+        // _route = Route();
         // 死循环，不退出
         while (true)
         {
@@ -75,23 +81,30 @@ public:
 
                 buffer[buffer.size()] = '\0';
                 LOG(LogLevel::Debug) << "recv data: " << buffer;
-                std::string key(buffer);
-                std::string value = _Mydict.Translate(key);
-                Sendto(value, inetAddr.GetIp(), inetAddr.GetPort());
-                LOG(LogLevel::Debug) << "sendto data: " << value;
+
+                // HandleManager.Dispatcher(_route.MsgRoute(GetSocketFd(),buffer,inetAddr))
+
+                // 业务处理
+                // std::string key(buffer);
+                // std::string value = _Mydict.Translate(key);
+                // Sendto(value, inetAddr.GetIp(), inetAddr.GetPort());
+                if(!_route.IsExist(inetAddr))
+                {
+                    _route.AddUser(inetAddr);
+                    _route.PrintUser();
+
+                } 
+                
+                _route.MsgRoute(GetSocketFd(), buffer, inetAddr);
+                LOG(LogLevel::Debug) << "sendto data: " << buffer;
+            }else{
+                LOG(LogLevel::Error) << "recv Error";
             }
         }
     }
 
 private:
-    // int CreateSocket()
-    // {
-    // }
-    // void Bind();
-    // void Recv();
-    // void Send(std::string msg, InetAddr &clientAddr);
-
-private:
     char _buffer[defaultsize];
-    Dict _Mydict;
+    UserManager _route;
+    UdpTask_t _func;
 };

@@ -26,7 +26,7 @@ public:
         _port = ntohs(addr.sin_port);
     }
 
-    struct sockaddr_in GetAddr()
+    struct sockaddr_in& GetAddr()
     {
         return _addr;
     }

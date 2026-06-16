@@ -69,7 +69,10 @@ public:
         struct sockaddr_in peer;
         socklen_t len = sizeof(peer);
         char inbuffer[defaultsize];
+        LOG(LogLevel::Info) << "等待信息中...";
         int n = recvfrom(_socketfd, inbuffer, defaultsize, 0, (struct sockaddr *)&peer, &len);
+        LOG(LogLevel::Info) << "等待成功！";
+
         if(n > 0)
         {
             data->assign(inbuffer, n);
